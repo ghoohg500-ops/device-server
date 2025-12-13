@@ -3,6 +3,24 @@ import sqlite3, time, os
 
 app = Flask(__name__)
 DB = "devices.db"
+def init_db():
+    conn = sqlite3.connect(DB)
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        hwid TEXT UNIQUE,
+        hostname TEXT,
+        first_seen INTEGER,
+        last_seen INTEGER,
+        status TEXT
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
+
 
 def get_db():
     conn = sqlite3.connect(DB)
