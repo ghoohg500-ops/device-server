@@ -1,8 +1,13 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
 import sqlite3, time, os
 
 app = Flask(__name__)
+app.secret_key = "CHANGE_THIS_SECRET_KEY"
 DB = "devices.db"
+
+# ===== ADMIN LOGIN CONFIG =====
+ADMIN_USER = "hoangnam0303"
+ADMIN_PASS = "nam0303"
 
 # ===== INIT DATABASE =====
 def init_db():
@@ -23,13 +28,12 @@ def init_db():
 
 init_db()
 
-# ===== DB HELPER =====
 def get_db():
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
     return conn
 
-# ===== API: CHECK DEVICE =====
+# ===== API CHECK DEVICE =====
 @app.route("/check_device", methods=["POST"])
 def check_device():
     data = request.get_json(force=True)
@@ -37,19 +41,15 @@ def check_device():
     hostname = data.get("hostname", "unknown")
     now = int(time.time())
 
-    if not hwid:
-        return jsonify({"error": "no hwid"}), 400
-
     conn = get_db()
     c = conn.cursor()
-
     c.execute("SELECT * FROM devices WHERE hwid=?", (hwid,))
     row = c.fetchone()
 
     if not row:
         c.execute("""
-            INSERT INTO devices (hwid, hostname, first_seen, last_seen, status)
-            VALUES (?, ?, ?, ?, ?)
+        INSERT INTO devices (hwid, hostname, first_seen, last_seen, status)
+        VALUES (?, ?, ?, ?, ?)
         """, (hwid, hostname, now, now, "allowed"))
         conn.commit()
         conn.close()
@@ -59,186 +59,142 @@ def check_device():
         conn.close()
         return jsonify({"status": "blocked"}), 403
 
-    c.execute(
-        "UPDATE devices SET last_seen=? WHERE hwid=?",
-        (now, hwid)
-    )
+    c.execute("UPDATE devices SET last_seen=? WHERE hwid=?", (now, hwid))
     conn.commit()
     conn.close()
     return jsonify({"status": "ok"}), 200
 
-# ===== QUICK BLOCK / UNBLOCK =====
-@app.route("/block/<hwid>")
-def block_device(hwid):
-    conn = get_db()
-    conn.execute(
-        "UPDATE devices SET status='blocked' WHERE hwid=?",
-        (hwid,)
-    )
-    conn.commit()
-    conn.close()
-    return "BLOCKED"
-
-@app.route("/unblock/<hwid>")
-def unblock_device(hwid):
-    conn = get_db()
-    conn.execute(
-        "UPDATE devices SET status='allowed' WHERE hwid=?",
-        (hwid,)
-    )
-    conn.commit()
-    conn.close()
-    return "UNBLOCKED"
-
-# ===== ADMIN WEB UI =====
-ADMIN_HTML = """
-<!DOCTYPE html>
-<html lang="vi">
+# ===== LOGIN PAGE =====
+LOGIN_HTML = """
+<!doctype html>
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Device Admin</title>
+<title>Admin Login</title>
 <style>
 body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: linear-gradient(120deg, #1e1e2f, #2b5876);
-    color: #fff;
-}
-.container {
-    max-width: 1200px;
-    margin: 40px auto;
-    padding: 20px;
-}
-h1 {
-    text-align: center;
-    margin-bottom: 30px;
+    background: linear-gradient(120deg,#1e1e2f,#2b5876);
+    font-family: Arial;
+    color: white;
 }
 .box {
-    background: rgba(255,255,255,0.08);
+    width: 320px;
+    margin: 120px auto;
+    background: rgba(255,255,255,0.1);
+    padding: 25px;
     border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 0 20px rgba(0,0,0,0.3);
+    box-shadow: 0 0 20px rgba(0,0,0,0.4);
 }
-input {
+input, button {
     width: 100%;
     padding: 12px;
+    margin-top: 10px;
     border-radius: 8px;
     border: none;
-    margin-top: 10px;
-    font-size: 15px;
 }
 button {
-    margin-top: 10px;
-    padding: 12px 20px;
-    border: none;
-    border-radius: 8px;
+    background: #2ed573;
     font-size: 15px;
-    cursor: pointer;
 }
-.block { background: #ff4757; color: #fff; }
-.unblock { background: #2ed573; color: #000; }
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-}
-th, td {
-    padding: 10px;
-    border-bottom: 1px solid rgba(255,255,255,0.2);
-    text-align: center;
-}
-th {
-    background: rgba(0,0,0,0.3);
-}
-.allowed { color: #2ed573; }
-.blocked { color: #ff4757; }
-.small { font-size: 12px; }
+.error { color: #ff6b6b; }
 </style>
 </head>
-
 <body>
-<div class="container">
-    <h1>📊 Device Admin Panel</h1>
-
-    <div class="box">
-        <h3>🚫 Block thiết bị</h3>
-        <form method="post">
-            <input name="block_hwid" placeholder="Nhập HWID cần BLOCK">
-            <button class="block">BLOCK</button>
-        </form>
-    </div>
-
-    <div class="box">
-        <h3>🔓 Gỡ block thiết bị</h3>
-        <form method="post">
-            <input name="unblock_hwid" placeholder="Nhập HWID cần UNBLOCK">
-            <button class="unblock">UNBLOCK</button>
-        </form>
-    </div>
-
-    <div class="box">
-        <h3>🖥️ Danh sách thiết bị</h3>
-        <table>
-            <tr>
-                <th>ID</th>
-                <th>Hostname</th>
-                <th>HWID</th>
-                <th>Status</th>
-                <th>Last Seen</th>
-            </tr>
-            {% for d in devices %}
-            <tr>
-                <td>{{ d.id }}</td>
-                <td>{{ d.hostname }}</td>
-                <td class="small">{{ d.hwid }}</td>
-                <td class="{{ d.status }}">{{ d.status }}</td>
-                <td>{{ d.last_seen }}</td>
-            </tr>
-            {% endfor %}
-        </table>
-    </div>
+<div class="box">
+<h2>🔐 Admin Login</h2>
+<form method="post">
+<input name="username" placeholder="Username">
+<input name="password" type="password" placeholder="Password">
+<button>LOGIN</button>
+</form>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
 </div>
 </body>
 </html>
 """
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        if (request.form["username"] == ADMIN_USER and
+            request.form["password"] == ADMIN_PASS):
+            session["admin"] = True
+            return redirect("/admin")
+        else:
+            error = "Sai tài khoản hoặc mật khẩu"
+    return render_template_string(LOGIN_HTML, error=error)
+
+@app.route("/logout")
+def logout():
+    session.pop("admin", None)
+    return redirect("/login")
+
+# ===== DELETE DEVICE =====
+@app.route("/delete_device/<int:device_id>")
+def delete_device(device_id):
+    if not session.get("admin"):
+        return redirect("/login")
+    conn = get_db()
+    conn.execute("DELETE FROM devices WHERE id=?", (device_id,))
+    conn.commit()
+    conn.close()
+    return redirect("/admin")
+
+# ===== ADMIN PANEL =====
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
+    if not session.get("admin"):
+        return redirect("/login")
+
     conn = get_db()
 
     if request.method == "POST":
-        block_hwid = request.form.get("block_hwid")
-        unblock_hwid = request.form.get("unblock_hwid")
-
-        if block_hwid:
+        if request.form.get("block_hwid"):
             conn.execute(
                 "UPDATE devices SET status='blocked' WHERE hwid=?",
-                (block_hwid,)
+                (request.form["block_hwid"],)
             )
-            conn.commit()
-
-        if unblock_hwid:
+        if request.form.get("unblock_hwid"):
             conn.execute(
                 "UPDATE devices SET status='allowed' WHERE hwid=?",
-                (unblock_hwid,)
+                (request.form["unblock_hwid"],)
             )
-            conn.commit()
+        conn.commit()
 
-    devices = conn.execute(
-        "SELECT * FROM devices ORDER BY id DESC"
-    ).fetchall()
+    devices = conn.execute("SELECT * FROM devices ORDER BY id DESC").fetchall()
     conn.close()
 
     return render_template_string(ADMIN_HTML, devices=devices)
 
-# ===== HOME =====
+# ===== ADMIN HTML =====
+ADMIN_HTML = """
+<h1>Device Admin</h1>
+<a href="/logout">🚪 Logout</a>
+<form method="post">
+<input name="block_hwid" placeholder="HWID block">
+<button>BLOCK</button>
+</form>
+<form method="post">
+<input name="unblock_hwid" placeholder="HWID unblock">
+<button>UNBLOCK</button>
+</form>
+<table border=1>
+<tr><th>ID</th><th>Hostname</th><th>HWID</th><th>Status</th><th>Action</th></tr>
+{% for d in devices %}
+<tr>
+<td>{{ d.id }}</td>
+<td>{{ d.hostname }}</td>
+<td>{{ d.hwid }}</td>
+<td>{{ d.status }}</td>
+<td><a href="/delete_device/{{ d.id }}">❌ Delete</a></td>
+</tr>
+{% endfor %}
+</table>
+"""
+
 @app.route("/")
 def home():
     return "Device server is running"
 
-# ===== START =====
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-        
