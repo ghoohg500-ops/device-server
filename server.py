@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
+from flask import Flask, request, jsonify, render_template_string, redirect, session
 import sqlite3, time, os
 
 app = Flask(__name__)
@@ -168,28 +168,122 @@ def admin():
 
 # ===== ADMIN HTML =====
 ADMIN_HTML = """
-<h1>Device Admin</h1>
-<a href="/logout">🚪 Logout</a>
+<!doctype html>
+<html>
+<head>
+<title>Device Admin Panel</title>
+<style>
+body {
+    margin: 0;
+    font-family: Arial;
+    background: linear-gradient(120deg,#1e1e2f,#2b5876);
+    color: #fff;
+}
+.header {
+    padding: 20px;
+    font-size: 22px;
+    background: rgba(0,0,0,0.25);
+}
+.container {
+    width: 95%;
+    max-width: 1000px;
+    margin: 30px auto;
+}
+.card {
+    background: rgba(255,255,255,0.08);
+    padding: 20px;
+    border-radius: 14px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+input {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: none;
+    margin-bottom: 10px;
+}
+button {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+}
+.block-btn { background: #ff4757; color: white; }
+.unblock-btn { background: #2ed573; color: white; }
+.logout {
+    float: right;
+    color: #ff6b6b;
+    text-decoration: none;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+th, td {
+    padding: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+}
+.status-ok { color: #2ed573; font-weight: bold; }
+.status-block { color: #ff6b6b; font-weight: bold; }
+.delete { color: #ff6b6b; text-decoration: none; }
+</style>
+</head>
+
+<body>
+
+<div class="header">
+📊 Device Admin Panel
+<a class="logout" href="/logout">🚪 Logout</a>
+</div>
+
+<div class="container">
+
+<div class="card">
+<h3>🚫 Block thiết bị</h3>
 <form method="post">
-<input name="block_hwid" placeholder="HWID block">
-<button>BLOCK</button>
+<input name="block_hwid" placeholder="Nhập HWID cần block">
+<button class="block-btn">BLOCK</button>
 </form>
+</div>
+
+<div class="card">
+<h3>✅ Gỡ block thiết bị</h3>
 <form method="post">
-<input name="unblock_hwid" placeholder="HWID unblock">
-<button>UNBLOCK</button>
+<input name="unblock_hwid" placeholder="Nhập HWID cần unblock">
+<button class="unblock-btn">UNBLOCK</button>
 </form>
-<table border=1>
-<tr><th>ID</th><th>Hostname</th><th>HWID</th><th>Status</th><th>Action</th></tr>
+</div>
+
+<div class="card">
+<h3>📋 Danh sách thiết bị</h3>
+<table>
+<tr>
+<th>ID</th>
+<th>Hostname</th>
+<th>HWID</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
 {% for d in devices %}
 <tr>
 <td>{{ d.id }}</td>
 <td>{{ d.hostname }}</td>
-<td>{{ d.hwid }}</td>
-<td>{{ d.status }}</td>
-<td><a href="/delete_device/{{ d.id }}">❌ Delete</a></td>
+<td style="font-size:12px">{{ d.hwid }}</td>
+<td class="{{ 'status-block' if d.status == 'blocked' else 'status-ok' }}">
+{{ d.status }}
+</td>
+<td>
+<a class="delete" href="/delete_device/{{ d.id }}">❌ Delete</a>
+</td>
 </tr>
 {% endfor %}
 </table>
+</div>
+
+</div>
+</body>
+</html>
 """
 
 @app.route("/")
