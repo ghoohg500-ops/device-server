@@ -29,7 +29,7 @@ def get_db():
 
 @app.route("/check_device", methods=["POST"])
 def check_device():
-    data = request.json
+    data = request.get_json(force=True)
     hwid = data.get("hwid")
     hostname = data.get("hostname")
     now = int(time.time())
