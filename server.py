@@ -32,9 +32,9 @@ def get_db():
 # ===== API: CHECK DEVICE =====
 @app.route("/check_device", methods=["POST"])
 def check_device():
-    data = request.get_json(force=True)   # ÉP ĐỌC JSON (QUAN TRỌNG)
+    data = request.get_json(force=True)
     hwid = data.get("hwid")
-    hostname = data.get("hostname")
+    hostname = data.get("hostname", "unknown")
     now = int(time.time())
 
     if not hwid:
@@ -67,15 +67,7 @@ def check_device():
     conn.close()
     return jsonify({"status": "ok"}), 200
 
-# ===== API: LIST DEVICES (JSON) =====
-@app.route("/list")
-def list_devices():
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM devices ORDER BY id DESC").fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
-
-# ===== API: BLOCK DEVICE =====
+# ===== QUICK BLOCK / UNBLOCK =====
 @app.route("/block/<hwid>")
 def block_device(hwid):
     conn = get_db()
@@ -87,7 +79,18 @@ def block_device(hwid):
     conn.close()
     return "BLOCKED"
 
-# ===== WEB ADMIN UI =====
+@app.route("/unblock/<hwid>")
+def unblock_device(hwid):
+    conn = get_db()
+    conn.execute(
+        "UPDATE devices SET status='allowed' WHERE hwid=?",
+        (hwid,)
+    )
+    conn.commit()
+    conn.close()
+    return "UNBLOCKED"
+
+# ===== ADMIN WEB UI =====
 ADMIN_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -102,7 +105,7 @@ body {
     color: #fff;
 }
 .container {
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 40px auto;
     padding: 20px;
 }
@@ -130,14 +133,12 @@ button {
     padding: 12px 20px;
     border: none;
     border-radius: 8px;
-    background: #ff4757;
-    color: #fff;
     font-size: 15px;
     cursor: pointer;
 }
-button:hover {
-    opacity: 0.85;
-}
+.block { background: #ff4757; color: #fff; }
+.unblock { background: #2ed573; color: #000; }
+
 table {
     width: 100%;
     border-collapse: collapse;
@@ -156,6 +157,7 @@ th {
 .small { font-size: 12px; }
 </style>
 </head>
+
 <body>
 <div class="container">
     <h1>📊 Device Admin Panel</h1>
@@ -163,8 +165,16 @@ th {
     <div class="box">
         <h3>🚫 Block thiết bị</h3>
         <form method="post">
-            <input name="hwid" placeholder="Nhập HWID cần block">
-            <button>BLOCK</button>
+            <input name="block_hwid" placeholder="Nhập HWID cần BLOCK">
+            <button class="block">BLOCK</button>
+        </form>
+    </div>
+
+    <div class="box">
+        <h3>🔓 Gỡ block thiết bị</h3>
+        <form method="post">
+            <input name="unblock_hwid" placeholder="Nhập HWID cần UNBLOCK">
+            <button class="unblock">UNBLOCK</button>
         </form>
     </div>
 
@@ -197,17 +207,30 @@ th {
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
     conn = get_db()
+
     if request.method == "POST":
-        hwid = request.form.get("hwid")
-        if hwid:
+        block_hwid = request.form.get("block_hwid")
+        unblock_hwid = request.form.get("unblock_hwid")
+
+        if block_hwid:
             conn.execute(
                 "UPDATE devices SET status='blocked' WHERE hwid=?",
-                (hwid,)
+                (block_hwid,)
             )
             conn.commit()
 
-    devices = conn.execute("SELECT * FROM devices ORDER BY id DESC").fetchall()
+        if unblock_hwid:
+            conn.execute(
+                "UPDATE devices SET status='allowed' WHERE hwid=?",
+                (unblock_hwid,)
+            )
+            conn.commit()
+
+    devices = conn.execute(
+        "SELECT * FROM devices ORDER BY id DESC"
+    ).fetchall()
     conn.close()
+
     return render_template_string(ADMIN_HTML, devices=devices)
 
 # ===== HOME =====
@@ -218,4 +241,4 @@ def home():
 # ===== START =====
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-    
+        
